@@ -1,0 +1,8 @@
+name = "bom-api-cache"
+main = "src/index.ts"
+compatibility_date = "2025-09-15"
+
+[vars]
+CORS_ORIGIN = "https://floodfighter.vercel.app/, http://localhost:3000"
+UPSTREAM = "https://hosting.wsapi.cloud.bom.gov.au/arcgis/rest/services/flood/National_Flood_Gauge_Network/FeatureServer/1/query"
+CACHE_TTL = "3600"
