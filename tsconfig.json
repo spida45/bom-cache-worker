@@ -1,25 +1,29 @@
 {
     "compilerOptions": {
-      /* 基础设置 */
-      "target": "ES2022",                // 输出 JS 版本
-      "module": "ESNext",                // 模块格式
-      "moduleResolution": "Bundler",     // Cloudflare 推荐，适配 wrangler 打包
+      // === Language & Module Settings ===
+      "target": "ES2022",                // Output JavaScript version (Cloudflare Workers run on modern V8, ES2022 is safe)
+      "module": "ESNext",                // Use modern ES module output
+      "moduleResolution": "Bundler",     // Recommended for Workers with Wrangler (bundler style resolution)
   
-      /* 类型支持 */
-      "types": ["@cloudflare/workers-types"], 
-      "lib": ["ES2022", "WebWorker"],
+      // === Type Checking ===
+      "types": ["@cloudflare/workers-types"], // Load Cloudflare Worker environment types (caches.default, ExecutionContext, etc.)
+      "lib": ["ES2022", "WebWorker"],         // Include standard ES features and WebWorker APIs
   
-      /* 输出与目录 */
-      "outDir": "dist",                  // 编译输出目录
-      "rootDir": "src",                  // 源代码目录
-      "esModuleInterop": true,           // 支持 commonjs -> esm 互操作
-      "forceConsistentCasingInFileNames": true,
+      // === Strictness & Safety ===
+      "strict": true,                    // Enable all strict type checks
+      "forceConsistentCasingInFileNames": true, // Disallow inconsistent file name casing
+      "skipLibCheck": true,              // Skip type checking of declaration files (*.d.ts) for faster builds
   
-      /* 严格性 */
-      "strict": true,                    // 开启严格模式
-      "skipLibCheck": true               // 跳过第三方库类型检查，加快编译
+      // === Interoperability ===
+      "esModuleInterop": true,           // Allow default imports from CommonJS modules
+      "allowSyntheticDefaultImports": true, // Allow 'import x from y' when module exports with 'module.exports'
+  
+      // === Paths & Output ===
+      "rootDir": "src",                  // Where your TypeScript source code lives
+      "outDir": "dist",                  // Where compiled JavaScript will be output
+      "noEmit": false                    // Allow emitting compiled JS (Wrangler usually handles bundling, so this may not matter)
     },
-    "include": ["src"],
-    "exclude": ["node_modules", "dist"]
+    "include": ["src"],                  // Only include files inside /src
+    "exclude": ["node_modules", "dist"]  // Exclude build artifacts and dependencies
   }
   
