@@ -4,13 +4,14 @@
  * Environment variables configured in wrangler.toml
  */
 export interface Env {
-  CORS_ORIGIN: string; // Allowed origins, e.g. "https://your-frontend.vercel.app, http://localhost:3000" or "*"
-  UPSTREAM: string;    // ArcGIS upstream query endpoint
-  CACHE_TTL: string;   // Cache duration in seconds (e.g., "3600")
+  CORS_ORIGIN: string;     // Allowed origins, e.g. "https://xxx.vercel.app, http://localhost:3000" or "*"
+  UPSTREAM_FLOOD: string;  // Flood catchments: FeatureServer/1/query
+  UPSTREAM_WATER: string;  // Water storages:  MapServer/0/query
+  CACHE_TTL: string;       // Cache TTL in seconds, e.g. "3600"
 }
 
 /**
- * Add proper CORS headers to a response.
+ * Add CORS headers to a response.
  */
 function withCORS(res: Response, originHeader: string, reqOrigin?: string) {
   const allowList = originHeader.split(",").map(s => s.trim());
@@ -30,56 +31,70 @@ function withCORS(res: Response, originHeader: string, reqOrigin?: string) {
 }
 
 /**
- * Build a cache key based on the full upstream URL.
+ * Build a cache key from the full upstream URL.
  */
-function buildCacheKey(u: URL) {
+function cacheKeyFromURL(u: URL) {
   return new Request(u.toString());
 }
 
 /**
- * Worker entry point.
+ * Apply default query params if they are missing.
+ * These are safe defaults for ArcGIS REST "query" endpoints.
+ */
+function applyDefaults(sp: URLSearchParams, kind: "flood" | "water") {
+  if (!sp.has("f")) sp.set("f", "geojson");
+  if (!sp.has("returnGeometry")) sp.set("returnGeometry", "true");
+  if (!sp.has("outFields")) sp.set("outFields", "*");
+  if (!sp.has("where")) sp.set("where", "1=1");
+
+  // Reasonable record caps per dataset (tweak as needed)
+  if (kind === "flood") {
+    if (!sp.has("resultRecordCount")) sp.set("resultRecordCount", "500");
+  } else {
+    // water storages are points; allow a bit larger cap
+    if (!sp.has("resultRecordCount")) sp.set("resultRecordCount", "1000");
+  }
+}
+
+/**
+ * Worker entry
  */
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-    const reqUrl = new URL(request.url);
+    const url = new URL(request.url);
     const reqOrigin = request.headers.get("Origin") || undefined;
 
-    // --- Handle preflight requests ---
+    // --- Preflight ---
     if (request.method === "OPTIONS") {
       return withCORS(new Response(null, { status: 204 }), env.CORS_ORIGIN, reqOrigin);
     }
-
     if (request.method !== "GET") {
-      return withCORS(
-        new Response("Method Not Allowed", { status: 405 }),
-        env.CORS_ORIGIN,
-        reqOrigin
-      );
+      return withCORS(new Response("Method Not Allowed", { status: 405 }), env.CORS_ORIGIN, reqOrigin);
     }
 
-    // --- Build upstream request ---
-    const upstream = new URL(env.UPSTREAM);
-    const sp = new URLSearchParams(reqUrl.search);
+    // --- Route selection: /flood or /water (root `/` falls back to /flood for backward compatibility) ---
+    let kind: "flood" | "water" = "flood";
+    const pathname = url.pathname.replace(/\/+$/, ""); // trim trailing slash
+    if (pathname === "/water") kind = "water";
+    // pathname === "/flood" or "/" -> flood
 
-    // Default parameters (applied only if missing)
-    if (!sp.has("f")) sp.set("f", "geojson");
-    if (!sp.has("returnGeometry")) sp.set("returnGeometry", "true");
-    if (!sp.has("resultRecordCount")) sp.set("resultRecordCount", "200");
-    if (!sp.has("outFields")) sp.set("outFields", "*");
-    if (!sp.has("where")) sp.set("where", "1=1"); // Default: return all features
+    const upstreamBase = kind === "flood" ? env.UPSTREAM_FLOOD : env.UPSTREAM_WATER;
+    const upstream = new URL(upstreamBase);
 
+    // --- Build upstream query: pass-through + defaults ---
+    const sp = new URLSearchParams(url.search);
+    applyDefaults(sp, kind);
     upstream.search = sp.toString();
 
-    // --- Check edge cache ---
+    // --- Edge cache lookup ---
     const cache = (caches as unknown as { default: Cache }).default;
-    const cacheKey = buildCacheKey(upstream);
-    const cached = await cache.match(cacheKey);
-
+    const key = cacheKeyFromURL(upstream);
+    const cached = await cache.match(key);
     if (cached) {
       return withCORS(cached, env.CORS_ORIGIN, reqOrigin);
     }
 
-    // --- Fetch upstream with timeout ---
+    // --- Upstream fetch with timeout ---
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort("timeout"), 8000);
     let upstreamRes: Response;
@@ -104,7 +119,7 @@ export default {
       clearTimeout(timer);
     }
 
-    // --- Standardize response headers ---
+    // --- Normalize headers + caching policy ---
     const ttl = parseInt(env.CACHE_TTL || "3600", 10);
     const h = new Headers(upstreamRes.headers);
     h.set("Content-Type", "application/json; charset=utf-8");
@@ -113,9 +128,9 @@ export default {
     const body = await upstreamRes.arrayBuffer();
     const fresh = new Response(body, { status: upstreamRes.status, headers: h });
 
-    // Only cache successful responses (status 200–299)
+    // Only cache successful responses
     if (upstreamRes.ok) {
-      ctx.waitUntil(cache.put(cacheKey, fresh.clone()));
+      ctx.waitUntil(cache.put(key, fresh.clone()));
     }
 
     return withCORS(fresh, env.CORS_ORIGIN, reqOrigin);
