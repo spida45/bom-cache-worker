@@ -4,7 +4,7 @@ compatibility_date = "2025-09-15"
 
 [vars]
 # Allow your Vercel domain and local dev
-CORS_ORIGIN = "https://floodfighter.vercel.app/, http://localhost:3000"
+CORS_ORIGIN = "https://floodfighter.vercel.app, http://localhost:3000"
 
 # Upstreams (BOM ArcGIS)
 UPSTREAM_FLOOD = "https://hosting.wsapi.cloud.bom.gov.au/arcgis/rest/services/flood/National_Flood_Gauge_Network/FeatureServer/1/query"
